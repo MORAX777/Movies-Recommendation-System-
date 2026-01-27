@@ -196,3 +196,18 @@ def recommend_similar(movie_id: int):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+# ==========================================
+# 🛠️ ADMIN DEBUG ROUTE (View All Users)
+# ==========================================
+@app.get("/check-users")
+def view_all_users(db: Session = Depends(get_db)):
+    all_users = db.query(User).all()
+    return {
+        "total_users": len(all_users),
+        "users_list": [
+            {"id": u.id, "name": u.name, "email": u.email} 
+            for u in all_users
+        ]
+    }
