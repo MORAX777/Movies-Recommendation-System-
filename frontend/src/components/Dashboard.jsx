@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 
-const PY_URL = "http://localhost:8000";
+const PY_URL = "https://movies-recommendation-system-70ns.onrender.com";
 const TMDB_KEY = "128694e67f08e5e75b7877b59f232011";
 const IMG_BASE = "https://image.tmdb.org/t/p/w500";
 

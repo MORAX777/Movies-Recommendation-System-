@@ -15,14 +15,14 @@ const Sidebar = ({ isOpen, close, logout, userId }) => {
   // Load mini history when sidebar opens
   useEffect(() => {
     if (isOpen && userId) {
-      axios.get(`http://localhost:8000/user/history/${userId}`)
+      axios.get(`https://movies-recommendation-system-70ns.onrender.com/user/history/${userId}`)
         .then(res => setMiniHistory(res.data.slice(0, 5))) // Get top 5
         .catch(() => {});
     }
   }, [isOpen, userId]);
 
   const removeSideHistory = async (movieId) => {
-    await axios.delete(`http://localhost:8000/user/history/${userId}/${movieId}`);
+    await axios.delete(`https://movies-recommendation-system-70ns.onrender.com/user/history/${userId}/${movieId}`);
     setMiniHistory(miniHistory.filter(m => m.MovieID !== movieId));
   };
 
@@ -128,3 +128,4 @@ const Sidebar = ({ isOpen, close, logout, userId }) => {
   );
 };
 export default Sidebar;
+

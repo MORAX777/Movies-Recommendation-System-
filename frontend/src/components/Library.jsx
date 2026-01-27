@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 
-const PY_URL = "http://localhost:8000";
+const PY_URL = "https://movies-recommendation-system-70ns.onrender.com";
 const TMDB_KEY = "128694e67f08e5e75b7877b59f232011";
 
 const Library = ({ userId }) => {
@@ -142,3 +142,4 @@ const Library = ({ userId }) => {
   );
 };
 export default Library;
+

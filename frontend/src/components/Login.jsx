@@ -15,8 +15,8 @@ const Login = ({ onLogin }) => {
     
     // API CONFIG
     //  IMPORTANT: If you deployed to Render, change this URL to your Render URL!
-    // For local testing, keep it http://localhost:8000
-    const BASE_URL = "http://localhost:8000"; 
+    // For local testing, keep it https://movies-recommendation-system-70ns.onrender.com
+    const BASE_URL = "https://movies-recommendation-system-70ns.onrender.com"; 
     const endpoint = isSignUp ? "/auth/signup" : "/auth/login";
     const payload = isSignUp ? formData : { email: formData.email, password: formData.password };
 
@@ -138,3 +138,4 @@ const Login = ({ onLogin }) => {
 };
 
 export default Login;
+
