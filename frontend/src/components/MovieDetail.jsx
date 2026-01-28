@@ -2,51 +2,54 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import axios from "axios";
 
+const PY_URL = "https://movies-recommendation-system-70ns.onrender.com";
 const TMDB_KEY = "128694e67f08e5e75b7877b59f232011";
 const IMG_BASE = "https://image.tmdb.org/t/p/original";
 
-const MovieDetail = () => {
+const MovieDetail = ({ userId }) => {
   const { id } = useParams();
   const [movie, setMovie] = useState(null);
+  const [inList, setInList] = useState(false);
 
   useEffect(() => {
-    // We fetch details from TMDB directly for the nice UI
-    const fetchDetails = async () => {
-      // First get the movie title from our backend ID (we cheat a bit here and just fetch by ID from TMDB assuming sync)
-      // Actually, standard way: Fetch TMDB details by ID. 
-      // Note: MovieLens IDs != TMDB IDs. But for this demo, we will search by title if needed.
-      // SIMPLIFICATION: We will use the TMDB ID search trick again.
-      // For stability, we assume the user clicked from dashboard which had data.
-      // Let"s just fetch by ID from TMDB assuming the ID passed is the TMDB ID? No, it is MovieLens ID.
-      // We will just show a "Details" placeholder to keep it simple and stable as requested.
-      
-      try {
-         // This is a simplified fetch. In a real app we map IDs. 
-         // For now, we will just use the "Movie Not Found" fallback if complex logic fails.
-         // But the user wants it WORKING. 
-         // Strategy: Get Movie Info from Backend first.
-         const pyRes = await axios.get(`https://movies-recommendation-system-70ns.onrender.com/movies/${id}`);
-         const title = pyRes.data.Title.split("(")[0].trim();
-         
-         const tmdbSearch = await axios.get(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${title}`);
-         const tmdbData = tmdbSearch.data.results[0];
-         setMovie(tmdbData);
-      } catch (e) { console.error(e); }
+    const init = async () => {
+      // 1. Log History
+      if (userId) axios.post(`${PY_URL}/user/history`, { user_id: userId, movie_id: parseInt(id) });
+
+      // 2. Check Watchlist
+      if (userId) {
+        const res = await axios.get(`${PY_URL}/user/watchlist/${userId}`);
+        setInList(res.data.some(i => i.movie_id == id));
+      }
+
+      // 3. Get Details
+      const pyRes = await axios.get(`${PY_URL}/movies/${id}`);
+      // Enhance with TMDB
+      const tmdbSearch = await axios.get(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${pyRes.data.Title.split("(")[0]}`);
+      setMovie({ ...pyRes.data, ...tmdbSearch.data.results[0] });
     };
-    fetchDetails();
-  }, [id]);
+    init();
+  }, [id, userId]);
+
+  const toggleList = async () => {
+    setInList(!inList);
+    await axios.post(`${PY_URL}/user/watchlist`, { user_id: userId, movie_id: parseInt(id) });
+  };
 
   if (!movie) return <div className="text-white p-10">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="h-[60vh] relative">
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10" />
-        <img src={IMG_BASE + movie.backdrop_path} className="w-full h-full object-cover opacity-50" />
-        <div className="absolute bottom-10 left-10 z-20">
-          <h1 className="text-5xl font-bold mb-4">{movie.title}</h1>
-          <p className="max-w-xl text-lg text-gray-300">{movie.overview}</p>
-          <Link to="/" className="inline-block mt-6 bg-red-600 px-6 py-2 rounded font-bold">Back to Home</Link>
+    <div className="min-h-screen bg-black text-white relative">
+      <div className="absolute inset-0 bg-cover bg-center opacity-30" style={{backgroundImage: `url(${IMG_BASE}${movie.backdrop_path})`}}></div>
+      <div className="relative z-10 p-10 flex flex-col md:flex-row gap-8 mt-10">
+        <img src={IMG_BASE + movie.poster_path} className="w-72 rounded-lg shadow-2xl" />
+        <div>
+          <h1 className="text-5xl font-bold mb-4">{movie.title || movie.Title}</h1>
+          <button onClick={toggleList} className={`px-6 py-2 rounded font-bold mb-6 ${inList ? "bg-red-600" : "bg-white text-black"}`}>
+            {inList ? " In Watchlist" : "+ Add to Watchlist"}
+          </button>
+          <p className="text-lg text-gray-300 max-w-2xl">{movie.overview}</p>
+          <Link to="/" className="inline-block mt-8 text-gray-400 hover:text-white"> Back Home</Link>
         </div>
       </div>
     </div>

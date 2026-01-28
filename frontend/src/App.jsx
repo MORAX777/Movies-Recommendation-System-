@@ -4,6 +4,7 @@ import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Dashboard from "./components/Dashboard";
 import MovieDetail from "./components/MovieDetail";
+import Library from "./components/Library";
 
 function App() {
   const [userId, setUserId] = useState(localStorage.getItem("userId"));
@@ -25,9 +26,10 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={userId ? <Dashboard userId={userId} userName={userName} logout={handleLogout} /> : <Navigate to="/login" />} />
+      <Route path="/library" element={userId ? <Library userId={userId} /> : <Navigate to="/login" />} />
       <Route path="/login" element={<Login onLogin={handleLogin} />} />
       <Route path="/signup" element={<Signup />} />
-      <Route path="/movie/:id" element={userId ? <MovieDetail /> : <Navigate to="/login" />} />
+      <Route path="/movie/:id" element={userId ? <MovieDetail userId={userId} /> : <Navigate to="/login" />} />
     </Routes>
   );
 }
