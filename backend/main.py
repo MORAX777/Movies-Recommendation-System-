@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
@@ -50,35 +50,49 @@ class Watchlist(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# 4. ROBUST DATASET LOADING
-# This finds the CSV files relative to THIS file, so it works on Render
+# ==========================================
+# 4. DATA LOADING (WITH EMERGENCY BACKUP)
+# ==========================================
+EMERGENCY_MOVIES = [
+    {"MovieID": 1, "Title": "Toy Story (1995)", "Genres": "Animation|Children's|Comedy"},
+    {"MovieID": 2, "Title": "Jumanji (1995)", "Genres": "Adventure|Children's|Fantasy"},
+    {"MovieID": 3, "Title": "Grumpier Old Men (1995)", "Genres": "Comedy|Romance"},
+    {"MovieID": 4, "Title": "Waiting to Exhale (1995)", "Genres": "Comedy|Drama"},
+    {"MovieID": 5, "Title": "Father of the Bride Part II (1995)", "Genres": "Comedy"},
+    {"MovieID": 6, "Title": "Heat (1995)", "Genres": "Action|Crime|Thriller"},
+    {"MovieID": 7, "Title": "Sabrina (1995)", "Genres": "Comedy|Romance"},
+    {"MovieID": 8, "Title": "Tom and Huck (1995)", "Genres": "Adventure|Children's"},
+    {"MovieID": 9, "Title": "Sudden Death (1995)", "Genres": "Action"},
+    {"MovieID": 10, "Title": "GoldenEye (1995)", "Genres": "Action|Adventure|Thriller"},
+    {"MovieID": 260, "Title": "Star Wars: Episode IV - A New Hope (1977)", "Genres": "Action|Adventure|Sci-Fi"},
+    {"MovieID": 1196, "Title": "Star Wars: Episode V - The Empire Strikes Back (1980)", "Genres": "Action|Adventure|Sci-Fi"},
+    {"MovieID": 1198, "Title": "Raiders of the Lost Ark (1981)", "Genres": "Action|Adventure"},
+    {"MovieID": 2571, "Title": "Matrix, The (1999)", "Genres": "Action|Sci-Fi|Thriller"},
+    {"MovieID": 858, "Title": "Godfather, The (1972)", "Genres": "Action|Crime|Drama"}
+]
+
 try:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     movies_path = os.path.join(base_dir, "movies.csv")
-    ratings_path = os.path.join(base_dir, "ratings.csv")
     
     if os.path.exists(movies_path):
+        print(f" Loading movies from: {movies_path}")
         movies_df = pd.read_csv(movies_path, encoding="latin-1")
     else:
-        # Fallback: Try looking one folder up (in case of folder structure mismatch)
-        movies_df = pd.read_csv("movies.csv", encoding="latin-1")
-
-    if os.path.exists(ratings_path):
-        ratings_df = pd.read_csv(ratings_path, encoding="latin-1")
-    else:
-        ratings_df = pd.read_csv("ratings.csv", encoding="latin-1")
-
-    # Popular movies logic
-    popular_movies = ratings_df.groupby('MovieID').size().sort_values(ascending=False).head(20).index
-    popular_titles = movies_df[movies_df['MovieID'].isin(popular_movies)]
+        # Check one level up (Render structure fallback)
+        movies_path_up = os.path.join(base_dir, "..", "movies.csv")
+        if os.path.exists(movies_path_up):
+            print(f" Loading movies from root: {movies_path_up}")
+            movies_df = pd.read_csv(movies_path_up, encoding="latin-1")
+        else:
+            print(" CSV NOT FOUND! USING EMERGENCY DATA.")
+            movies_df = pd.DataFrame(EMERGENCY_MOVIES)
 
 except Exception as e:
-    print(f"Warning: Could not load CSV files. {e}")
-    movies_df = pd.DataFrame()
-    ratings_df = pd.DataFrame()
-    popular_titles = pd.DataFrame()
+    print(f" Error loading CSV: {e}. USING EMERGENCY DATA.")
+    movies_df = pd.DataFrame(EMERGENCY_MOVIES)
 
-# 5. AUTH
+# 5. AUTH UTILS
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_db():
@@ -88,7 +102,6 @@ def get_db():
     finally:
         db.close()
 
-# 6. SCHEMAS
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -102,7 +115,7 @@ class WatchlistRequest(BaseModel):
     user_id: int
     movie_id: int
 
-# 7. ROUTES
+# 6. ROUTES
 @app.get("/")
 def home():
     return {"message": "Movie Recommendation API is Running"}
@@ -126,19 +139,26 @@ def login(u: UserLogin, db: Session = Depends(get_db)):
 
 @app.get("/movies")
 def get_movies(limit: int = 20, search: str = "", genre: str = ""):
-    if movies_df.empty: return []
+    if movies_df.empty:
+        return EMERGENCY_MOVIES
+    
     results = movies_df
+    
     if genre and genre != "All":
         results = results[results['Genres'].str.contains(genre, case=False, na=False)]
+
     if search:
         results = results[results['Title'].str.contains(search, case=False, na=False)]
+    
     return results.head(limit).to_dict(orient="records")
 
 @app.get("/movies/{movie_id}")
 def get_movie_detail(movie_id: int):
-    if movies_df.empty: return {}
     movie = movies_df[movies_df['MovieID'] == movie_id]
-    if movie.empty: return {"error": "Movie not found"}
+    if movie.empty:
+        # Check emergency data
+        fallback = next((m for m in EMERGENCY_MOVIES if m["MovieID"] == movie_id), None)
+        return fallback if fallback else {"error": "Movie not found"}
     return movie.iloc[0].to_dict()
 
 @app.get("/user/history/{user_id}")
@@ -164,7 +184,13 @@ def toggle_watchlist(req: WatchlistRequest, db: Session = Depends(get_db)):
         return {"message": "Removed"}
     
     movie_row = movies_df[movies_df['MovieID'] == req.movie_id]
-    title = movie_row.iloc[0]['Title'] if not movie_row.empty else "Unknown"
+    if not movie_row.empty:
+        title = movie_row.iloc[0]['Title']
+    else:
+        # Fallback title from emergency data
+        fallback = next((m for m in EMERGENCY_MOVIES if m["MovieID"] == req.movie_id), None)
+        title = fallback['Title'] if fallback else "Unknown"
+
     new_item = Watchlist(user_id=req.user_id, movie_id=req.movie_id, title=title)
     db.add(new_item)
     db.commit()
@@ -172,28 +198,15 @@ def toggle_watchlist(req: WatchlistRequest, db: Session = Depends(get_db)):
 
 @app.get("/user/personal/{user_id}")
 def get_recommendations(user_id: int, db: Session = Depends(get_db)):
-    if movies_df.empty: return []
-    history = db.query(History).filter(History.user_id == user_id).all()
-    watched_ids = [h.movie_id for h in history]
-    if not watched_ids: return popular_titles.head(10).to_dict(orient="records")
+    # Simple random sample from available movies as a basic recommendation
+    if movies_df.empty:
+        return EMERGENCY_MOVIES[:5]
+    return movies_df.sample(n=min(10, len(movies_df))).to_dict(orient="records")
 
-    watched_movies = movies_df[movies_df['MovieID'].isin(watched_ids)]
-    if watched_movies.empty: return popular_titles.head(10).to_dict(orient="records")
+@app.get("/check-users")
+def view_all_users(db: Session = Depends(get_db)):
+    users = db.query(User).all()
+    return {"count": len(users), "users": [{"id": u.id, "email": u.email} for u in users]}
 
-    all_genres = []
-    for genres in watched_movies['Genres']:
-        all_genres.extend(genres.split('|'))
-    
-    from collections import Counter
-    if not all_genres: return popular_titles.head(10).to_dict(orient="records")
-    
-    favorite_genre = Counter(all_genres).most_common(1)[0][0]
-    recommendations = movies_df[
-        (movies_df['Genres'].str.contains(favorite_genre, na=False)) & 
-        (~movies_df['MovieID'].isin(watched_ids))
-    ]
-    return recommendations.head(10).to_dict(orient="records")
-
-# 8. STARTUP COMMAND (THIS WAS MISSING!)
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
