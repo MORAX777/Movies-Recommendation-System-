@@ -211,3 +211,44 @@ def view_all_users(db: Session = Depends(get_db)):
             for u in all_users
         ]
     }
+
+# ==========================================
+# ⭐ STAR RATING SYSTEM
+# ==========================================
+class UserRating(Base):
+    __tablename__ = "user_ratings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer)
+    movie_id = Column(Integer)
+    rating = Column(Integer)
+
+# Create the table
+Base.metadata.create_all(bind=engine)
+
+class RatingRequest(BaseModel):
+    user_id: int
+    movie_id: int
+    rating: int
+
+@app.post("/rate")
+def rate_movie(req: RatingRequest, db: Session = Depends(get_db)):
+    try:
+        # Check if user already rated this movie
+        existing = db.query(UserRating).filter(UserRating.user_id == req.user_id, UserRating.movie_id == req.movie_id).first()
+        
+        if existing:
+            existing.rating = req.rating # Update existing
+        else:
+            new_rating = UserRating(user_id=req.user_id, movie_id=req.movie_id, rating=req.rating)
+            db.add(new_rating)
+            
+        db.commit()
+        return {"message": "Rating saved!", "rating": req.rating}
+    except Exception as e:
+        print("Error saving rating:", e)
+        raise HTTPException(status_code=500, detail="Failed to save rating")
+
+@app.get("/rate/{user_id}/{movie_id}")
+def get_user_rating(user_id: int, movie_id: int, db: Session = Depends(get_db)):
+    existing = db.query(UserRating).filter(UserRating.user_id == user_id, UserRating.movie_id == movie_id).first()
+    return {"rating": existing.rating if existing else 0}

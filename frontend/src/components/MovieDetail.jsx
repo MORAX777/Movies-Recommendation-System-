@@ -1,87 +1,125 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import axios from "axios";
 
+// ⚠️ PRODUCTION URL
 const PY_URL = "https://movies-recommendation-system-70ns.onrender.com";
-const TMDB_KEY = "128694e67f08e5e75b7877b59f232011";
-const IMG_BASE_LG = "https://image.tmdb.org/t/p/original";
+const TMDB_KEY = "128694e67f08e5e75b7877b59f232011"; // Replace if you have a new key
+const IMG_BASE = "https://image.tmdb.org/t/p/original";
 
 const MovieDetail = ({ userId }) => {
   const { id } = useParams();
   const [movie, setMovie] = useState(null);
-  const [bgImage, setBgImage] = useState(null);
-  const [recs, setRecs] = useState([]);
+  const [userRating, setUserRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [loading, setLoading] = useState(true);
 
+  // 1. Fetch Movie Details & User's Previous Rating
   useEffect(() => {
-    window.scrollTo(0, 0);
-    // Get Details
-    axios.get(`${PY_URL}/movie/${id}`).then(async (res) => {
-        setMovie(res.data);
-        const imgRes = await axios.get(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(res.data.Title.split("(")[0])}`);
-        setBgImage(imgRes.data.results?.[0]?.backdrop_path);
-    });
-    // Get Similar
-    axios.get(`${PY_URL}/recommend/${id}`).then(async (res) => {
-        const withImages = await Promise.all(res.data.map(async m => {
-             const i = await axios.get(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(m.Title.split("(")[0])}`);
-             return { ...m, poster: i.data.results?.[0]?.poster_path };
-        }));
-        setRecs(withImages);
-    });
-  }, [id]);
+    const fetchData = async () => {
+      try {
+        // Get Movie Info from TMDB
+        const tmdbRes = await axios.get(
+          `https://api.themoviedb.org/3/movie/${id}?api_key=${TMDB_KEY}&language=en-US`
+        );
+        setMovie(tmdbRes.data);
 
-  const handlePlay = () => {
-    // Add to History
-    axios.post(`${PY_URL}/user/history`, { user_id: userId, movie_id: id });
-    alert(`Playing "${movie.Title}"... (Added to History)`);
+        // Get User's Rating from Our Backend
+        if (userId) {
+          try {
+            const rateRes = await axios.get(`${PY_URL}/rate/${userId}/${id}`);
+            setUserRating(rateRes.data.rating);
+          } catch (err) {
+            console.log("No previous rating found.");
+          }
+        }
+      } catch (error) {
+        console.error("Error loading movie:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [id, userId]);
+
+  // 2. Handle Clicking a Star
+  const handleRate = async (star) => {
+    setUserRating(star); // Update UI instantly
+    if (!userId) return alert("Please log in to rate movies!");
+
+    try {
+      await axios.post(`${PY_URL}/rate`, {
+        user_id: userId,
+        movie_id: parseInt(id),
+        rating: star,
+      });
+      console.log("Rating saved:", star);
+    } catch (error) {
+      alert("Failed to save rating.");
+    }
   };
 
-  const handleWatchlist = () => {
-    axios.post(`${PY_URL}/user/watchlist`, { user_id: userId, movie_id: id })
-      .then(res => alert(res.data.status === "added" ? "Added to My List" : "Removed from My List"));
-  };
-
-  if (!movie) return <div className="text-white p-10">Loading...</div>;
+  if (loading) return <div className="text-white text-center mt-20">Loading...</div>;
+  if (!movie) return <div className="text-white text-center mt-20">Movie not found.</div>;
 
   return (
-    <div className="min-h-screen bg-[#121212] text-white">
-      <nav className="absolute top-0 z-20 w-full p-6">
-        <Link to="/" className="bg-black/50 hover:bg-white/20 px-4 py-2 rounded-full text-sm font-bold transition"> Home</Link>
-      </nav>
+    <div className="relative min-h-screen bg-black text-white">
+      {/* BACKGROUND IMAGE */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-30" 
+        style={{ backgroundImage: `url(${IMG_BASE}${movie.backdrop_path})` }} 
+      />
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row gap-10 items-center md:items-start">
+        {/* POSTER */}
+        <img 
+          src={movie.poster_path ? `${IMG_BASE}${movie.poster_path}` : "https://via.placeholder.com/300x450"} 
+          alt={movie.title} 
+          className="w-64 md:w-80 rounded-lg shadow-2xl border border-gray-700"
+        />
 
-      <div className="relative h-[70vh] w-full">
-         <div className="absolute inset-0">
-            {bgImage ? <img src={IMG_BASE_LG + bgImage} className="w-full h-full object-cover opacity-50" /> : <div className="bg-gray-900 w-full h-full" />}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-transparent to-transparent" />
-         </div>
-         <div className="absolute bottom-0 left-0 p-8 md:p-16 max-w-3xl">
-            <h1 className="text-4xl md:text-6xl font-bold mb-4">{movie.Title}</h1>
-            <div className="flex gap-4 text-sm mb-6 text-gray-300">
-                <span className="text-green-400 font-bold">98% Match</span>
-                <span>{movie.Year}</span>
-                <span>{movie.Genres.replace(/\|/g, "  ")}</span>
-            </div>
-            <div className="flex gap-4">
-                <button onClick={handlePlay} className="bg-white text-black px-8 py-3 rounded font-bold hover:bg-gray-200 flex items-center gap-2"> Play</button>
-                <button onClick={handleWatchlist} className="bg-gray-700/80 text-white px-8 py-3 rounded font-bold hover:bg-gray-600 flex items-center gap-2">+ My List</button>
-            </div>
-         </div>
-      </div>
+        {/* INFO */}
+        <div className="flex-1">
+          <h1 className="text-4xl md:text-5xl font-extrabold mb-2">{movie.title}</h1>
+          <p className="text-gray-400 italic mb-6">{movie.tagline}</p>
 
-      <div className="px-8 py-12">
-        <h3 className="text-xl font-bold mb-4 border-l-4 border-red-600 pl-4">More Like This</h3>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-           {recs.map(r => (
-             <Link to={`/movie/${r.MovieID}`} key={r.MovieID} className="group">
-                <div className="aspect-[2/3] bg-gray-800 rounded overflow-hidden transition hover:scale-105">
-                   {r.poster ? <img src={`https://image.tmdb.org/t/p/w500${r.poster}`} className="w-full h-full object-cover" /> : <div className="p-2 text-xs text-center">{r.Title}</div>}
-                </div>
-             </Link>
-           ))}
+          <div className="flex items-center gap-4 mb-6">
+            <span className="bg-red-600 px-3 py-1 rounded text-sm font-bold">{movie.release_date?.split("-")[0]}</span>
+            <span className="border border-white/30 px-3 py-1 rounded text-sm">{movie.runtime} min</span>
+            <span className="text-yellow-400 font-bold">★ {movie.vote_average.toFixed(1)}</span>
+          </div>
+
+          <p className="text-gray-300 text-lg leading-relaxed mb-8">{movie.overview}</p>
+
+          {/* ⭐ STAR RATING SECTION */}
+          <div className="bg-white/10 p-6 rounded-xl border border-white/10 backdrop-blur-sm max-w-md">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-3">Rate this Movie</h3>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleRate(star)}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  className="text-4xl transition-transform hover:scale-125 focus:outline-none"
+                  style={{ 
+                    color: star <= (hoverRating || userRating) ? "#FFD700" : "#4B5563" 
+                  }}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {userRating > 0 ? `You rated this ${userRating} stars` : "Click to rate"}
+            </p>
+          </div>
+
         </div>
       </div>
     </div>
   );
 };
-export default MovieDetail;
 
+export default MovieDetail;
