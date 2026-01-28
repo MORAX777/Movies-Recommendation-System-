@@ -4,7 +4,7 @@ import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Dashboard from "./components/Dashboard";
 import Library from "./components/Library";
-import MovieDetail from "./components/MovieDetail"; // ✅ Import the new page
+import MovieDetail from "./components/MovieDetail";
 
 function App() {
   const [userId, setUserId] = useState(localStorage.getItem("userId") || null);
@@ -29,35 +29,12 @@ function App() {
 
   return (
     <Routes>
-      {/* 1. Login Page */}
       <Route path="/login" element={<Login onLogin={handleLogin} />} />
-      
-      {/* 2. Signup Page */}
       <Route path="/signup" element={<Signup />} />
-
-      {/* 3. Main Dashboard (Protected) */}
-      <Route 
-        path="/" 
-        element={userId ? <Dashboard user={userName} userId={userId} logout={handleLogout} /> : <Navigate to="/login" />} 
-      />
-
-      {/* 4. Genre Filter Routes */}
-      <Route 
-        path="/genre/:genreName" 
-        element={userId ? <Dashboard user={userName} userId={userId} logout={handleLogout} /> : <Navigate to="/login" />} 
-      />
-
-      {/* 5. Library Page */}
-      <Route 
-        path="/library" 
-        element={userId ? <Library userId={userId} /> : <Navigate to="/login" />} 
-      />
-
-      {/* 6. ⭐ MOVIE DETAIL PAGE (With Ratings) */}
-      <Route 
-        path="/movie/:id" 
-        element={<MovieDetail userId={userId} />} 
-      />
+      <Route path="/" element={userId ? <Dashboard user={userName} userId={userId} logout={handleLogout} /> : <Navigate to="/login" />} />
+      <Route path="/genre/:genreName" element={userId ? <Dashboard user={userName} userId={userId} logout={handleLogout} /> : <Navigate to="/login" />} />
+      <Route path="/library" element={userId ? <Library userId={userId} /> : <Navigate to="/login" />} />
+      <Route path="/movie/:id" element={<MovieDetail userId={userId} />} />
     </Routes>
   );
 }
