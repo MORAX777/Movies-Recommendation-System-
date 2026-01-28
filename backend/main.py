@@ -1,12 +1,13 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
+from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 import pandas as pd
 import os
+import uvicorn
 
 # 1. APP SETUP
 app = FastAPI()
@@ -49,21 +50,35 @@ class Watchlist(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# 4. LOAD MOVIE DATASET
-# (Make sure movies.csv and ratings.csv are in the same folder or root)
+# 4. ROBUST DATASET LOADING
+# This finds the CSV files relative to THIS file, so it works on Render
 try:
-    movies_df = pd.read_csv("movies.csv", encoding="latin-1")
-    ratings_df = pd.read_csv("ratings.csv", encoding="latin-1")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    movies_path = os.path.join(base_dir, "movies.csv")
+    ratings_path = os.path.join(base_dir, "ratings.csv")
     
-    # Pre-calculate popular movies for fallback
+    if os.path.exists(movies_path):
+        movies_df = pd.read_csv(movies_path, encoding="latin-1")
+    else:
+        # Fallback: Try looking one folder up (in case of folder structure mismatch)
+        movies_df = pd.read_csv("movies.csv", encoding="latin-1")
+
+    if os.path.exists(ratings_path):
+        ratings_df = pd.read_csv(ratings_path, encoding="latin-1")
+    else:
+        ratings_df = pd.read_csv("ratings.csv", encoding="latin-1")
+
+    # Popular movies logic
     popular_movies = ratings_df.groupby('MovieID').size().sort_values(ascending=False).head(20).index
     popular_titles = movies_df[movies_df['MovieID'].isin(popular_movies)]
+
 except Exception as e:
-    print(f"Warning: Could not load CSV files. Recommendations won't work. {e}")
+    print(f"Warning: Could not load CSV files. {e}")
     movies_df = pd.DataFrame()
     ratings_df = pd.DataFrame()
+    popular_titles = pd.DataFrame()
 
-# 5. AUTH UTILS
+# 5. AUTH
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_db():
@@ -73,7 +88,7 @@ def get_db():
     finally:
         db.close()
 
-# 6. API SCHEMAS
+# 6. SCHEMAS
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -87,20 +102,15 @@ class WatchlistRequest(BaseModel):
     user_id: int
     movie_id: int
 
-# ==========================================
 # 7. ROUTES
-# ==========================================
-
 @app.get("/")
 def home():
     return {"message": "Movie Recommendation API is Running"}
 
-# AUTH ROUTES
 @app.post("/auth/signup")
 def signup(u: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == u.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    
     hashed_pw = pwd_context.hash(u.password)
     new_user = User(email=u.email, hashed_password=hashed_pw, name=u.name)
     db.add(new_user)
@@ -114,34 +124,23 @@ def login(u: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid credentials")
     return {"user_id": user.id, "name": user.name}
 
-# MOVIE DATA ROUTES
 @app.get("/movies")
 def get_movies(limit: int = 20, search: str = "", genre: str = ""):
-    if movies_df.empty:
-        return []
-    
+    if movies_df.empty: return []
     results = movies_df
-    
-    # Filter by Genre
     if genre and genre != "All":
         results = results[results['Genres'].str.contains(genre, case=False, na=False)]
-
-    # Filter by Search
     if search:
         results = results[results['Title'].str.contains(search, case=False, na=False)]
-    
-    # Convert to list of dicts
     return results.head(limit).to_dict(orient="records")
 
 @app.get("/movies/{movie_id}")
 def get_movie_detail(movie_id: int):
     if movies_df.empty: return {}
     movie = movies_df[movies_df['MovieID'] == movie_id]
-    if movie.empty:
-        return {"error": "Movie not found"}
+    if movie.empty: return {"error": "Movie not found"}
     return movie.iloc[0].to_dict()
 
-# USER HISTORY ROUTES
 @app.get("/user/history/{user_id}")
 def get_history(user_id: int, db: Session = Depends(get_db)):
     return db.query(History).filter(History.user_id == user_id).all()
@@ -152,7 +151,6 @@ def delete_history(user_id: int, movie_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Deleted"}
 
-# WATCHLIST ROUTES
 @app.get("/user/watchlist/{user_id}")
 def get_watchlist(user_id: int, db: Session = Depends(get_db)):
     return db.query(Watchlist).filter(Watchlist.user_id == user_id).all()
@@ -163,59 +161,39 @@ def toggle_watchlist(req: WatchlistRequest, db: Session = Depends(get_db)):
     if existing:
         db.delete(existing)
         db.commit()
-        return {"message": "Removed from watchlist"}
+        return {"message": "Removed"}
     
-    # Get movie title
     movie_row = movies_df[movies_df['MovieID'] == req.movie_id]
     title = movie_row.iloc[0]['Title'] if not movie_row.empty else "Unknown"
-    
     new_item = Watchlist(user_id=req.user_id, movie_id=req.movie_id, title=title)
     db.add(new_item)
     db.commit()
-    return {"message": "Added to watchlist"}
+    return {"message": "Added"}
 
-# RECOMMENDATION ENGINE
 @app.get("/user/personal/{user_id}")
 def get_recommendations(user_id: int, db: Session = Depends(get_db)):
     if movies_df.empty: return []
-
-    # 1. Get user history
     history = db.query(History).filter(History.user_id == user_id).all()
     watched_ids = [h.movie_id for h in history]
+    if not watched_ids: return popular_titles.head(10).to_dict(orient="records")
 
-    # 2. Cold Start: If no history, return Popular movies
-    if not watched_ids:
-        return popular_titles.head(10).to_dict(orient="records")
-
-    # 3. Content-Based Filtering (Simple Genre Matching)
-    # Get genres of movies user watched
     watched_movies = movies_df[movies_df['MovieID'].isin(watched_ids)]
-    
-    if watched_movies.empty:
-        return popular_titles.head(10).to_dict(orient="records")
+    if watched_movies.empty: return popular_titles.head(10).to_dict(orient="records")
 
-    # Count most frequent genres
     all_genres = []
     for genres in watched_movies['Genres']:
         all_genres.extend(genres.split('|'))
     
-    # Find most common genre
     from collections import Counter
     if not all_genres: return popular_titles.head(10).to_dict(orient="records")
     
     favorite_genre = Counter(all_genres).most_common(1)[0][0]
-
-    # Return movies of that genre (excluding watched ones)
     recommendations = movies_df[
         (movies_df['Genres'].str.contains(favorite_genre, na=False)) & 
         (~movies_df['MovieID'].isin(watched_ids))
     ]
-    
     return recommendations.head(10).to_dict(orient="records")
 
-# ADMIN DEBUG (Optional: Keep this to check users)
-@app.get("/check-users")
-def view_all_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return {"count": len(users), "users": [{"id": u.id, "email": u.email} for u in users]}
-
+# 8. STARTUP COMMAND (THIS WAS MISSING!)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
