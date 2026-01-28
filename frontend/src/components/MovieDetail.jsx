@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 
-//  PRODUCTION URL
+// ?? PRODUCTION URL
 const PY_URL = "https://movies-recommendation-system-70ns.onrender.com";
 const TMDB_KEY = "128694e67f08e5e75b7877b59f232011"; 
 const IMG_BASE = "https://image.tmdb.org/t/p/original";
@@ -55,16 +55,16 @@ const MovieDetail = ({ userId }) => {
           <div className="flex flex-wrap items-center gap-4 mb-8">
             <span className="bg-red-600 px-3 py-1 rounded text-sm font-bold shadow-lg shadow-red-900/50">{movie.release_date?.split("-")[0]}</span>
             <span className="border border-white/30 px-3 py-1 rounded text-sm bg-black/50">{movie.runtime} min</span>
-            <span className="text-yellow-400 font-bold text-lg border border-yellow-500/30 px-3 py-1 rounded bg-yellow-500/10"> {movie.vote_average.toFixed(1)}</span>
+            <span className="text-yellow-400 font-bold text-lg border border-yellow-500/30 px-3 py-1 rounded bg-yellow-500/10">? {movie.vote_average.toFixed(1)}</span>
           </div>
           <p className="text-gray-300 text-lg leading-relaxed mb-8 border-l-4 border-red-600 pl-4">{movie.overview}</p>
           
-          {/*  STAR SYSTEM  */}
+          {/* ? STAR SYSTEM ? */}
           <div className="bg-white/10 p-5 rounded-lg border border-white/10 inline-block">
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Your Rating</h3>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
-                <button key={star} onClick={() => handleRate(star)} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} className="text-4xl transition-transform hover:scale-125 focus:outline-none" style={{ color: star <= (hoverRating || userRating) ? "#FFD700" : "#4B5563" }} title={`Rate ${star} Stars`}></button>
+                <button key={star} onClick={() => handleRate(star)} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} className="text-4xl transition-transform hover:scale-125 focus:outline-none" style={{ color: star <= (hoverRating || userRating) ? "#FFD700" : "#4B5563" }} title={`Rate ${star} Stars`}>?</button>
               ))}
             </div>
             <p className="text-xs text-gray-500 mt-2 h-4">{userRating > 0 ? `You rated this ${userRating} stars` : "Tap a star to rate"}</p>
